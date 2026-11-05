@@ -17,6 +17,9 @@ PPUCTRL_ON = %10001000  ; Bit 7: NMI on. Bit 3: sprite tiles at PPU $1000. Bit 4
 PPUMASK_ON = %00011110  ; Bits 4 and 3: show sprites and background. Bits 2 and 1: show them in the left 8 pixels too.
 FADE_FRAMES = 8         ; Fade step duration in frames.
 HOLD_FADE_FRAMES = 16   ; Hold fade for frames.
+SLIDE_NAM = 0
+SLIDE_TEXT = 1
+TEXT_ATTR = $FF         ; Use palette 3 in all corners.
 
 .segment "ZEROPAGE"     ; Variables in zero page. Access is faster, and (ptr), y works only with zero page.
 frame_counter:  .res 1  ; The NMI adds 1 every frame. The main loop watches it to wait for a frame.
@@ -158,9 +161,89 @@ load_slide:
   STA ptr
   LDA slide_hi, x
   STA ptr+1
+  LDA slide_kind, x
+  BNE @text ; not 0 = on a text slide
   LDA #$20  ; PPU $2000
   LDX #4    ; 4 pages = 1 KB
   JSR ppu_copy_pages
+  RTS
+@text:
+  JSR draw_text_slide
+  RTS
+
+; TODO: Understand this.
+; Draw the text slide at (ptr) to $2000.
+; The screen and NMI must be off.
+draw_text_slide:
+  ; 1. Clear nametable 0 to tile 0 (blank).
+  BIT PPUSTATUS
+  LDA #$20
+  STA PPUADDR
+  LDA #$00
+  STA PPUADDR
+  LDX #4              ; 4 pages = 1 KB
+  LDY #0
+@clear:
+  STA PPUDATA         ; A = 0
+  INY
+  BNE @clear
+  DEX
+  BNE @clear
+
+  ; 2. Fill the attribute table with palette 3.
+  LDA #$23
+  STA PPUADDR
+  LDA #$C0
+  STA PPUADDR         ; PPU $23C0
+  LDA #TEXT_ATTR
+  LDX #64
+@attr:
+  STA PPUDATA
+  DEX
+  BNE @attr
+  LDY #0              ; the first line
+
+  ; 3. Write each line.
+@line:
+  LDA (ptr), y        ; the column, or $FF
+  CMP #$FF
+  BEQ @done
+  STA temp            ; temp = column
+  INY
+  LDA (ptr), y        ; A = row
+  INY
+  PHA                 ; keep the row
+  LSR a
+  LSR a
+  LSR a               ; row / 8
+  CLC
+  ADC #$20
+  STA PPUADDR         ; high byte: $20 + row / 8
+  PLA
+  ASL a
+  ASL a
+  ASL a
+  ASL a
+  ASL a               ; (row x 32) & $FF
+  ORA temp            ; + column
+  STA PPUADDR         ; low byte
+@char:
+  LDA (ptr), y
+  BEQ @end_line       ; 0: the end of the line
+  STA PPUDATA         ; tile number = ASCII code
+  INY
+  JMP @char
+@end_line:
+  INY                 ; step over the 0
+  TYA
+  CLC
+  ADC ptr
+  STA ptr             ; ptr = the start of the next line
+  BCC :+
+  INC ptr+1
+: LDY #0
+  JMP @line
+@done:
   RTS
 
 read_joypad:          ; Read controller 1 into buttons. Then work out pressed.
@@ -337,24 +420,21 @@ default_palette:                                ; 32 colors: 4 background palett
   .byte $0F, $00, $10, $30                      ; Background palette 0. Entry 0 ($0F, black) is the backdrop for the whole screen. Then grey, light grey, white.
   .byte $0F, $01, $11, $30                      ; Background palette 1: reds. The PPU does not show the first byte of palettes 1–3.
   .byte $0F, $06, $16, $30                      ; Background palette 2: greens.
-  .byte $0F, $03, $13, $30                      ; Background palette 3: blues.
+  .byte $0F, $0F, $0F, $0F                      ; Background palette 3: blues.
   .byte $0F, $07, $27, $30                      ; Sprite palette 0. For sprites, color 0 is see-through.
   .byte $0F, $01, $21, $30                      ; Sprite palette 1.
   .byte $0F, $09, $29, $30                      ; Sprite palette 2.
   .byte $0F, $05, $25, $30                      ; Sprite palette 3.
-
-slide_bg:
-  .byte $0F
-  .byte $26
-  .byte $23
 
 bank_table:                                     ; 128 bytes that hold 0, 1, 2 … 127. bankswitch writes to these bytes.
   .repeat 128, i                                ; Repeat the next line 128 times. i counts from 0.
     .byte i                                     ; Store the count.
   .endrepeat                                    ; The end of the repeat.
 
-slide_lo: .lobytes slide1_nam, slide2_nam, slide3_nam
-slide_hi: .hibytes slide1_nam, slide2_nam, slide3_nam
+slide_kind:  .byte SLIDE_NAM, SLIDE_NAM, SLIDE_NAM, SLIDE_TEXT
+slide_bg:    .byte $0F, $26, $23, $25
+slide_lo: .lobytes slide1_nam, slide2_nam, slide3_nam, text_intro
+slide_hi: .hibytes slide1_nam, slide2_nam, slide3_nam, text_intro
 SLIDE_COUNT = slide_hi - slide_lo
 
 .segment "VECTORS"  ; The last 6 bytes of the fixed bank: $FFFA–$FFFF.
@@ -367,3 +447,12 @@ base_chr: .incbin "chr/base.chr" ; 8KB of tiles, 32 pages.
 slide1_nam: .incbin "slides/slide1.nam"
 slide2_nam: .incbin "slides/slide2.nam"
 slide3_nam: .incbin "slides/slide3.nam"
+
+; Text slide format:
+;  for each line: columns (0-31), row (0-29), text, 0
+;  $FF: the end of the slide
+text_intro:
+  .byte 4, 4, "Spark deck", 0
+  .byte 4, 8,  "- Made on a NES", 0
+  .byte 4, 10, "- Press A for more", 0
+  .byte $FF
