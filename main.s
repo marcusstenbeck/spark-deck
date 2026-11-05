@@ -261,6 +261,7 @@ fade_out:
   LDA fade_level
   JSR set_fade
   JSR wait_frames
+  JMP @step
 @done:
   RTS
 
