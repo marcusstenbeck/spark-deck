@@ -15,7 +15,8 @@
 
 PPUCTRL_ON = %10001000  ; Bit 7: NMI on. Bit 3: sprite tiles at PPU $1000. Bit 4 = 0: background tiles at $0000.
 PPUMASK_ON = %00011110  ; Bits 4 and 3: show sprites and background. Bits 2 and 1: show them in the left 8 pixels too.
-FADE_FRAMES = 4         ; Fade step duration in frames.
+FADE_FRAMES = 8         ; Fade step duration in frames.
+HOLD_FADE_FRAMES = 16   ; Hold fade for frames.
 
 .segment "ZEROPAGE"     ; Variables in zero page. Access is faster, and (ptr), y works only with zero page.
 frame_counter:  .res 1  ; The NMI adds 1 every frame. The main loop watches it to wait for a frame.
@@ -118,6 +119,7 @@ main_loop:                ; This runs once per frame, forever.
   
 @show:
   JSR fade_out
+
   LDA #0
   STA PPUMASK         ; screen off
   LDA #PPUCTRL_ON & %01111111
@@ -128,6 +130,13 @@ main_loop:                ; This runs once per frame, forever.
   JSR wait_frame      ; NMI resets the scroll
   LDA #PPUMASK_ON
   STA PPUMASK         ; screen on
+
+  LDX #HOLD_FADE_FRAMES
+:
+  JSR wait_frame
+  DEX
+  BNE :-
+
   JSR fade_in
   
   JMP main_loop
