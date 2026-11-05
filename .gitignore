@@ -1,0 +1,21 @@
+# Build output. `make` makes these again from the source.
+*.o
+*.nes
+*.dbg
+
+# Emulator files: code/data logs and label files.
+*.cdl
+*.mlb
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Editors. Keep the shared VS Code settings.
+.vscode/*
+!.vscode/settings.json
+*.swp
+*~
