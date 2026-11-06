@@ -117,6 +117,9 @@ main_loop:                ; This runs once per frame, forever.
   JSR read_joypad         ; Update buttons and pressed.
   JSR sparkle             ; On a spark slide, move colors 1 and 2 on.
   LDA pressed
+  AND #BUTTON_B
+  BNE @prev
+  LDA pressed
   AND #BUTTON_A
   BEQ main_loop           ; The result if 0: A was not pressed. Wait for the next frame.
   
@@ -126,6 +129,13 @@ main_loop:                ; This runs once per frame, forever.
   BNE @show
   LDA #0              ; after last slide
   STA current_slide   ; go back to first
+  JMP @show           ; jump past the decrementing code
+
+@prev:
+  DEC current_slide
+  BPL @show             ; 0 or more => a real slide to show
+  LDA #SLIDE_COUNT - 1  ; Before the first slide: go to last
+  STA current_slide
   
 @show:
   JSR fade_out
