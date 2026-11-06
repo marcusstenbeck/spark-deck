@@ -23,6 +23,10 @@ SLIDE_SPARK = 2         ; A .nam file with cycling colors.
 SPARKLE_MASK = %00000011 ; Change the colors every 4 frames. Use a run of 1 bits from bit 0.
 SPARK_START_2 = 6       ; Color 2 starts at this entry of spark_table: the opposite hue, and a different brightness.
 TEXT_ATTR = $FF         ; Use palette 3 in all corners.
+COLOR_BLACK = $0F
+COLOR_ES_PINK = $25
+COLOR_ES_BEIGE = $38
+TILE_BULLET = $7F
 
 .segment "ZEROPAGE"     ; Variables in zero page. Access is faster, and (ptr), y works only with zero page.
 frame_counter:  .res 1  ; The NMI adds 1 every frame. The main loop watches it to wait for a frame.
@@ -508,18 +512,42 @@ slide_kind:
   .byte SLIDE_NAM
   .byte SLIDE_SPARK
   .byte SLIDE_TEXT
+  .byte SLIDE_TEXT
+  .byte SLIDE_TEXT
+  .byte SLIDE_TEXT
+  .byte SLIDE_TEXT
+  .byte SLIDE_TEXT
+  .byte SLIDE_TEXT
 slide_bg:
-  .byte $0F
-  .byte $0F           ; spark: black backdrop
-  .byte $25
+  .byte COLOR_BLACK
+  .byte COLOR_BLACK
+  .byte COLOR_ES_PINK
+  .byte COLOR_ES_BEIGE
+  .byte COLOR_ES_PINK
+  .byte COLOR_ES_BEIGE
+  .byte COLOR_ES_BEIGE
+  .byte COLOR_ES_BEIGE
+  .byte COLOR_ES_PINK
 slide_lo:
   .lobytes slide1_nam
   .lobytes spark_nam
+  .lobytes text_title
   .lobytes text_intro
+  .lobytes demo
+  .lobytes text_hypothesis
+  .lobytes text_tech_overview
+  .lobytes text_tech_pref_vector
+  .lobytes text_thanks
 slide_hi:
   .hibytes slide1_nam
   .hibytes spark_nam
+  .hibytes text_title
   .hibytes text_intro
+  .hibytes demo
+  .hibytes text_hypothesis
+  .hibytes text_tech_overview
+  .hibytes text_tech_pref_vector
+  .hibytes text_thanks
 SLIDE_COUNT = slide_hi - slide_lo
 
 ; The colors that colors 1 and 2 of a spark slide step through.
@@ -546,10 +574,76 @@ slide3_nam: .incbin "slides/slide3.nam"
 ; Text slide format:
 ;  for each line: columns (0-31), row (0-29), text, 0
 ;  $FF: the end of the slide
-text_intro:
+text_title:
   .byte 1, 2, $90, $91, 0    ; picture, top half
   .byte 1, 3, $A0, $A1, 0    ; picture, bottom half
-  .byte 4, 6, "Spark deck", 0
-  .byte 4, 10,  "- Made on a NES", 0
-  .byte 4, 10, "- Press A for more", 0
+; .byte 4, 10, "123456789012345678901234", 0
+  .byte 4, 13, " Listening-first search", 0
+  .byte $FF
+
+text_intro:
+  ; Logo, keep on each slide
+  .byte 1, 2, $90, $91, 0    ; picture, top half
+  .byte 1, 3, $A0, $A1, 0    ; picture, bottom half
+  .byte 4, 6, "Find music by ear.", 0
+; .byte 4, 10, "123456789012345678901234", 0
+  .byte 4, 8, "You hear two tracks,", 0
+  .byte 4, 9, "pick one, and the next", 0
+  .byte 4, 10, "pair moves toward what", 0
+  .byte 4, 11, "you like.", 0
+  .byte $FF
+
+demo:
+  .byte 1, 2, $90, $91, 0    ; picture, top half
+  .byte 1, 3, $A0, $A1, 0    ; picture, bottom half
+; .byte 4, 10, "123456789012345678901234", 0
+  .byte 4, 14, "          DEMO          ", 0
+  .byte $FF
+
+text_hypothesis:
+  ; Logo, keep on each slide
+  .byte 1, 2, $90, $91, 0    ; picture, top half
+  .byte 1, 3, $A0, $A1, 0    ; picture, bottom half
+  .byte 4, 6, "My hypothesis", 0
+  .byte 4, 8, "You must listen to music", 0
+  .byte 4, 9, "before you can decide if", 0
+  .byte 4, 10, "it fits a project.", 0
+  .byte 4, 12, "A listening loop finds a", 0
+  .byte 4, 13, "fitting track faster", 0
+; .byte 4, 10, "123456789012345678901234", 0
+  .byte 4, 14, "than text search or", 0
+  .byte 4, 15, "category browsing.", 0
+  .byte $FF
+
+text_tech_overview:
+  ; Logo, keep on each slide
+  .byte 1, 2, $90, $91, 0    ; picture, top half
+  .byte 1, 3, $A0, $A1, 0    ; picture, bottom half
+  .byte 4, 6, "How it works", 0
+  .byte 4, 9, TILE_BULLET, " CLAP", 0
+  .byte 4, 11, TILE_BULLET, " Track vectors", 0
+  .byte 4, 13, TILE_BULLET, " Preference vector", 0
+  .byte $FF
+
+text_tech_pref_vector:
+  ; Logo, keep on each slide
+  .byte 1, 2, $90, $91, 0    ; picture, top half
+  .byte 1, 3, $A0, $A1, 0    ; picture, bottom half
+  .byte 4, 6, "The preference vector", 0
+  .byte 4, 9, "Starts at 0.", 0
+  .byte 4, 12, "for each step:", 0
+  .byte 4, 14, "  Show match & contrast", 0
+  .byte 4, 16, "  if pick(A):", 0
+  .byte 4, 17, "    move_closer_to(A)", 0
+  .byte 4, 19, "  elseif pick(B):", 0
+  .byte 4, 20, "    move_closer_to(B)", 0
+  .byte 4, 22, "  elseif pick(neither):", 0
+  .byte 4, 23, "    move_away_from_both()", 0
+  .byte $FF
+
+text_thanks:
+  .byte 1, 2, $90, $91, 0    ; picture, top half
+  .byte 1, 3, $A0, $A1, 0    ; picture, bottom half
+; .byte 4, 10, "123456789012345678901234", 0
+  .byte 4, 14, "       THANK YOU        ", 0
   .byte $FF
