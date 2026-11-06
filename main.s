@@ -19,6 +19,9 @@ FADE_FRAMES = 8         ; Fade step duration in frames.
 HOLD_FADE_FRAMES = 16   ; Hold fade for frames.
 SLIDE_NAM = 0
 SLIDE_TEXT = 1
+SLIDE_SPARK = 2         ; A .nam file with cycling colors.
+SPARKLE_MASK = %00000011 ; Change the colors every 4 frames. Use a run of 1 bits from bit 0.
+SPARK_START_2 = 6       ; Color 2 starts at this entry of spark_table: the opposite hue, and a different brightness.
 TEXT_ATTR = $FF         ; Use palette 3 in all corners.
 
 .segment "ZEROPAGE"     ; Variables in zero page. Access is faster, and (ptr), y works only with zero page.
@@ -33,6 +36,9 @@ temp:           .res 1  ; A scratch byte for short calculations.
 ptr:            .res 2  ; A 16-bit address: low byte, then high byte. Code reads data through it with lda (ptr), y.
 fade_level:     .res 1  ; 0 = full color, 4 = black
 bg_color:       .res 1  ; Backdrop color for each slide.
+sparkle_on:     .res 1  ; 1 = the current slide cycles colors 1 and 2.
+spark_colors:   .res 2  ; The current colors 1 and 2, at full brightness.
+spark_index:    .res 2  ; The positions of colors 1 and 2 in spark_table.
 
 .segment "OAM"          ; The RAM page at $0200.
 oam:           .res 256 ; 64 sprites × 4 bytes: Y, tile, attributes, X.
@@ -109,6 +115,7 @@ RESET:                  ; The CPU starts here at power-on and when you press Res
 main_loop:                ; This runs once per frame, forever.
   JSR wait_frame          ; Sleep until the NMI ran. This sets the speed: 60 passes a second.
   JSR read_joypad         ; Update buttons and pressed.
+  JSR sparkle             ; On a spark slide, move colors 1 and 2 on.
   LDA pressed
   AND #BUTTON_A
   BEQ main_loop           ; The result if 0: A was not pressed. Wait for the next frame.
@@ -161,14 +168,55 @@ load_slide:
   STA ptr
   LDA slide_hi, x
   STA ptr+1
+  LDA #0
+  STA sparkle_on      ; off, unless this is a spark slide
   LDA slide_kind, x
-  BNE @text ; not 0 = on a text slide
-  LDA #$20  ; PPU $2000
-  LDX #4    ; 4 pages = 1 KB
+  CMP #SLIDE_TEXT
+  BEQ @text
+  CMP #SLIDE_SPARK
+  BNE @nam
+  INC sparkle_on      ; sparkle_on = 1
+  LDA #0
+  STA spark_index+0   ; color 1 starts at entry 0
+  LDA spark_table+0
+  STA spark_colors+0
+  LDA #SPARK_START_2
+  STA spark_index+1   ; color 2 starts later in the table
+  LDA spark_table+SPARK_START_2
+  STA spark_colors+1
+@nam:
+  LDA #$20            ; PPU $2000
+  LDX #4              ; 4 pages = 1 KB
   JSR ppu_copy_pages
   RTS
 @text:
   JSR draw_text_slide
+  RTS
+
+; On a spark slide, move colors 1 and 2 to the next entry of spark_table.
+; Call once each frame.
+sparkle:
+  LDA sparkle_on
+  BEQ @done
+  LDA frame_counter
+  AND #SPARKLE_MASK
+  BNE @done           ; not time yet
+  LDX #1              ; color 2, then color 1
+@next:
+  LDY spark_index, x
+  INY                 ; the next entry
+  CPY #SPARK_LEN
+  BCC :+
+  LDY #0              ; after the last entry: back to entry 0
+: STY spark_index, x
+  LDA spark_table, y
+  STA spark_colors, x
+  STA palette_buf+1, x
+  DEX
+  BPL @next           ; until X goes below 0
+  LDA #1
+  STA palette_dirty
+@done:
   RTS
 
 ; TODO: Understand this.
@@ -330,6 +378,21 @@ set_fade:
 @bg_ok:
   STA palette_buf+0   ; the backdrop
   STA palette_buf+16  ; mirrored value that NMI writes after byte 0.
+  LDA sparkle_on
+  BEQ @no_spark
+  LDA spark_colors+0
+  SEC
+  SBC temp            ; A rows darker
+  BCS :+
+  LDA #$0F            ; below row 0 => black
+: STA palette_buf+1   ; color 1
+  LDA spark_colors+1
+  SEC
+  SBC temp
+  BCS :+
+  LDA #$0F
+: STA palette_buf+2   ; color 2
+@no_spark:
   LDA #1
   STA palette_dirty
   RTS
@@ -431,11 +494,32 @@ bank_table:                                     ; 128 bytes that hold 0, 1, 2 �
     .byte i                                     ; Store the count.
   .endrepeat                                    ; The end of the repeat.
 
-slide_kind:  .byte SLIDE_NAM, SLIDE_NAM, SLIDE_NAM, SLIDE_TEXT
-slide_bg:    .byte $0F, $26, $23, $25
-slide_lo: .lobytes slide1_nam, slide2_nam, slide3_nam, text_intro
-slide_hi: .hibytes slide1_nam, slide2_nam, slide3_nam, text_intro
+slide_kind:
+  .byte SLIDE_NAM
+  .byte SLIDE_SPARK
+  .byte SLIDE_TEXT
+slide_bg:
+  .byte $0F
+  .byte $0F           ; spark: black backdrop
+  .byte $25
+slide_lo:
+  .lobytes slide1_nam
+  .lobytes spark_nam
+  .lobytes text_intro
+slide_hi:
+  .hibytes slide1_nam
+  .hibytes spark_nam
+  .hibytes text_intro
 SLIDE_COUNT = slide_hi - slide_lo
+
+; The colors that colors 1 and 2 of a spark slide step through.
+; The low digit is the hue (1-C). The high digit is the brightness row (1-3).
+; Each hue goes around two times, with the brightness up and down.
+; Do not use colors that end in D, E or F.
+spark_table:
+  .byte $11, $22, $33, $24, $15, $26, $37, $28, $19, $2A, $3B, $2C
+  .byte $31, $22, $13, $24, $35, $26, $17, $28, $39, $2A, $1B, $2C
+SPARK_LEN = * - spark_table   ; the number of entries: 24
 
 .segment "VECTORS"  ; The last 6 bytes of the fixed bank: $FFFA–$FFFF.
   .word NMI         ; $FFFA: where the CPU goes on an NMI (every vblank).
@@ -445,6 +529,7 @@ SLIDE_COUNT = slide_hi - slide_lo
 .segment "BANK0"
 base_chr: .incbin "chr/base.chr" ; 8KB of tiles, 32 pages.
 slide1_nam: .incbin "slides/slide1.nam"
+spark_nam: .incbin "slides/spark.nam"
 slide2_nam: .incbin "slides/slide2.nam"
 slide3_nam: .incbin "slides/slide3.nam"
 
@@ -452,7 +537,9 @@ slide3_nam: .incbin "slides/slide3.nam"
 ;  for each line: columns (0-31), row (0-29), text, 0
 ;  $FF: the end of the slide
 text_intro:
-  .byte 4, 4, "Spark deck", 0
-  .byte 4, 8,  "- Made on a NES", 0
+  .byte 1, 2, $90, $91, 0    ; picture, top half
+  .byte 1, 3, $A0, $A1, 0    ; picture, bottom half
+  .byte 4, 6, "Spark deck", 0
+  .byte 4, 10,  "- Made on a NES", 0
   .byte 4, 10, "- Press A for more", 0
   .byte $FF
